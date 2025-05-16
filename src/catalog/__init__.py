@@ -49,20 +49,9 @@ def create_app(test_config=None):
     migrate.init_app(app, db)
     CORS(app)
 
-    # Initialize services
+    # Initialize storage service placeholder
     global storage_service
-    try:
-        if app.config.get("USE_MOCK_STORAGE"):
-            logger.info("Using mock storage service")
-            storage_service = MockStorage()
-        else:
-            logger.info("Initializing MinIO storage service")
-            storage_service = StorageService()
-            storage_service.init_app(app)
-    except Exception as e:
-        logger.warning(f"Error initializing storage service: {str(e)}")
-        logger.info("Falling back to mock storage service")
-        storage_service = MockStorage()
+    storage_service = None  # Will be initialized asynchronously in wsgi.py
 
     # Register health check endpoint
     @app.route("/health")
@@ -72,13 +61,17 @@ def create_app(test_config=None):
             # Check database connection
             db.session.execute("SELECT 1")
 
-            # Try MinIO connection (simplified check)
-            minio_status = "connected" if storage_service.client else "disconnected"
+            # Check storage initialization status
+            storage_status = "initializing"
+            if app.config.get("STORAGE_INITIALIZED"):
+                storage_status = "initialized"
+            elif app.config.get("USE_MOCK_STORAGE"):
+                storage_status = "mock_storage"
 
             return {
                 "status": "healthy",
                 "database": "connected",
-                "storage": minio_status,
+                "storage": storage_status,
             }, 200
         except Exception as e:
             return {"status": "unhealthy", "error": str(e)}, 500

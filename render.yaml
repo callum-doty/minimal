@@ -57,7 +57,10 @@ services:
         sync: false # Prompts user to enter this value during deployment
       - key: PYTHONPATH
         value: /app
-    healthCheckPath: /health
+    buildCommand: >
+      chmod +x start.sh &&
+      chmod +x failsafe-start.sh
+    startCommand: ./failsafe-start.sh
 
   # Celery Worker Service
   - type: worker

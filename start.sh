@@ -22,13 +22,17 @@ case $SERVICE_TYPE in
   "web")
     echo "Starting web service..."
     
-    # Try to run database migrations
-    FLASK_APP=src/wsgi.py python -m flask db upgrade || echo "Migration failed, but continuing..."
+    # Skip migrations during startup to speed up port binding
+    # FLASK_APP=src/wsgi.py python -m flask db upgrade || echo "Migration failed, but continuing..."
+    
+    # Print explicit message about port binding
+    echo "***********************************************"
+    echo "BINDING TO PORT ${PORT} on 0.0.0.0 (IMPORTANT)"
+    echo "***********************************************"
     
     # Start the Flask application with proper settings for proxies
-    echo "Starting with proxy settings on PORT ${PORT}..."
     # Use gunicorn to explicitly bind to the PORT provided by Render
-    gunicorn --bind "0.0.0.0:${PORT}" --workers=1 --timeout=120 --forwarded-allow-ips='*' src.wsgi:application
+    gunicorn --bind "0.0.0.0:${PORT}" --workers=1 --timeout=300 --forwarded-allow-ips='*' src.wsgi:application
     ;;
     
   "worker")
