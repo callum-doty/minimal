@@ -7,6 +7,7 @@ import sys
 import logging
 import threading
 import time
+import traceback
 
 # Configure logging
 logging.basicConfig(
@@ -18,51 +19,102 @@ logger = logging.getLogger(__name__)
 sys.path.insert(0, os.path.abspath(os.path.dirname(os.path.dirname(__file__))))
 
 # Create and configure the Flask application
-from src.catalog import create_app
+try:
+    logger.info("Importing create_app function...")
+    from src.catalog import create_app
 
-app = create_app()
+    logger.info("Creating Flask application...")
+    app = create_app()
+    logger.info("Flask application created successfully.")
+except Exception as e:
+    logger.error(f"Error creating Flask application: {str(e)}")
+    logger.error(traceback.format_exc())
+
+    # Fallback to a minimal application if main app fails
+    from flask import Flask, jsonify
+
+    app = Flask(__name__)
+
+    @app.route("/")
+    def index():
+        return jsonify(
+            {
+                "status": "error",
+                "message": "Main application failed to initialize",
+                "error": str(e),
+            }
+        )
+
+    @app.route("/health")
+    def health():
+        return jsonify({"status": "unhealthy", "error": str(e)}), 500
+
+    logger.info("Using minimal fallback application due to initialization error.")
 
 
 # Function to initialize storage in background
 def init_storage_async():
     """Initialize storage service asynchronously."""
-    from src.catalog.services.storage_service import StorageService
-    from src.catalog.services.mock_storage import MockStorage
-    from src.catalog import storage_service
-
     try:
         logger.info("Starting async storage initialization...")
         time.sleep(2)  # Let the main application start first
 
         with app.app_context():
+            from src.catalog.services.storage_service import StorageService
+            from src.catalog.services.mock_storage import MockStorage
+            from src.catalog import storage_service
+
             # Check if mock storage is enabled
             if app.config.get("USE_MOCK_STORAGE"):
                 logger.info("Using mock storage service (async)")
-                app.config["STORAGE_INITIALIZED"] = True
-                return
+                from src.catalog import storage_service
+                import sys
+
+                if "src.catalog.services.mock_storage" in sys.modules:
+                    mock_storage_module = sys.modules[
+                        "src.catalog.services.mock_storage"
+                    ]
+                    if hasattr(mock_storage_module, "MockStorage"):
+                        mock_class = mock_storage_module.MockStorage
+                        new_storage = mock_class()
+                        # Replace the storage_service module attribute
+                        import src.catalog
+
+                        src.catalog.storage_service = new_storage
+                        app.config["STORAGE_INITIALIZED"] = True
+                        logger.info("Mock storage initialized successfully")
+                        return
 
             # Try to initialize MinIO
             logger.info("Initializing MinIO storage service (async)")
             try:
-                if (
-                    storage_service is None
-                    or not hasattr(storage_service, "client")
-                    or storage_service.client is None
-                ):
-                    storage_svc = StorageService()
-                    storage_svc.init_app(app)
-                    logger.info("MinIO storage initialized successfully (async)")
-                    app.config["STORAGE_INITIALIZED"] = True
-                else:
-                    logger.info("Storage service already initialized")
-                    app.config["STORAGE_INITIALIZED"] = True
-            except Exception as e:
-                logger.warning(f"Error initializing storage service (async): {str(e)}")
-                logger.info("Falling back to mock storage service (async)")
-                mock_storage = MockStorage()
+                storage_svc = StorageService()
+                storage_svc.init_app(app)
+                # Replace the storage_service module attribute
+                import src.catalog
+
+                src.catalog.storage_service = storage_svc
+                logger.info("MinIO storage initialized successfully (async)")
                 app.config["STORAGE_INITIALIZED"] = True
+            except Exception as e:
+                logger.warning(
+                    f"Error initializing MinIO storage service (async): {str(e)}"
+                )
+                logger.info("Falling back to mock storage service (async)")
+                try:
+                    mock_storage = MockStorage()
+                    import src.catalog
+
+                    src.catalog.storage_service = mock_storage
+                    app.config["STORAGE_INITIALIZED"] = True
+                    logger.info("Mock storage initialized successfully (fallback)")
+                except Exception as fallback_error:
+                    logger.error(
+                        f"Failed to initialize mock storage fallback: {str(fallback_error)}"
+                    )
     except Exception as e:
         logger.error(f"Error in async storage initialization: {str(e)}")
+        logger.error(traceback.format_exc())
 
 
 # Start storage initialization in background thread

@@ -17,44 +17,68 @@ export TMPDIR=$(pwd)/tmp
 # Set the default service type if not specified
 SERVICE_TYPE=${SERVICE_TYPE:-"web"}
 
-# Start a background process to monitor the main application
+# Define function to start minimal app
+start_minimal_app() {
+    echo "Starting minimal fallback application..."
+    gunicorn --bind "0.0.0.0:${PORT:-5000}" --workers=1 minimal_app:app
+}
+
+# Function to start main app
+start_main_app() {
+    echo "Attempting to start main application..."
+    if [ -f "./start.sh" ]; then
+        # Try to start the main application with our standard script
+        ./start.sh || start_minimal_app
+    else
+        # Directly try gunicorn if start.sh is missing
+        gunicorn --bind "0.0.0.0:${PORT:-5000}" --workers=1 --timeout=300 src.wsgi:application || start_minimal_app
+    fi
+}
+
+# Main execution logic
 if [ "$SERVICE_TYPE" = "web" ]; then
-    # Start a background timer
+    # Start a background timer to ensure something binds to the port
     {
-        sleep 10  # Give the main app 10 seconds to bind to a port
+        sleep 15  # Give the main app 15 seconds to bind to a port
         
         # Check if anything is listening on the expected port
-        if ! nc -z localhost ${PORT:-5000}; then
-            echo "*** WARNING: Main application failed to bind to port within 10 seconds ***"
-            echo "*** Starting fallback application to maintain port binding ***"
+        if ! nc -z localhost ${PORT:-5000} 2>/dev/null; then
+            echo "*** WARNING: No application bound to port within 15 seconds ***"
+            echo "*** Starting minimal fallback application to maintain port binding ***"
             
             # Kill any existing gunicorn processes that might be stuck
-            pkill -f gunicorn || true
+            pkill -f gunicorn 2>/dev/null || true
             
-            # Start the fallback app
-            gunicorn --bind "0.0.0.0:${PORT:-5000}" --workers=1 fallback_app:app
+            # Start the minimal app
+            start_minimal_app
         else
-            echo "Main application successfully bound to port within timeout period"
+            echo "Application successfully bound to port within timeout period"
         fi
     } &
     TIMER_PID=$!
     
-    # Try to start the main application
-    echo "Starting main application..."
-    ./start.sh
+    # Start the main application
+    start_main_app
     
     # If we get here, the main application exited
-    echo "Main application exited. Checking if fallback is needed..."
+    echo "Main application exited."
     
     # Kill the timer if it's still running
     kill $TIMER_PID 2>/dev/null || true
     
     # Check if anything is still listening on the port
-    if ! nc -z localhost ${PORT:-5000}; then
-        echo "No application is binding to port. Starting fallback app..."
-        gunicorn --bind "0.0.0.0:${PORT:-5000}" --workers=1 fallback_app:app
+    if ! nc -z localhost ${PORT:-5000} 2>/dev/null; then
+        echo "No application is binding to port. Starting minimal app..."
+        start_minimal_app
+    else
+        echo "Port is still bound. No action needed."
     fi
 else
     # For non-web services, just run the normal start script
-    exec ./start.sh
+    if [ -f "./start.sh" ]; then
+        exec ./start.sh
+    else
+        echo "Error: start.sh not found"
+        exit 1
+    fi
 fi

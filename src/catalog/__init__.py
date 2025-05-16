@@ -21,7 +21,7 @@ migrate = Migrate()
 from src.catalog.services.storage_service import StorageService
 from src.catalog.services.mock_storage import MockStorage
 
-storage_service = None  # Will be initialized in create_app
+storage_service = None  # Will be initialized in create_app or wsgi.py
 
 
 def create_app(test_config=None):
@@ -72,25 +72,55 @@ def create_app(test_config=None):
                 "status": "healthy",
                 "database": "connected",
                 "storage": storage_status,
+                "version": "1.0.0",
             }, 200
         except Exception as e:
             return {"status": "unhealthy", "error": str(e)}, 500
 
-    # Register blueprints
+    # Register blueprints - MODIFIED FOR YOUR PROJECT STRUCTURE
     with app.app_context():
-        # Import and register blueprints
-        from src.catalog.routes.upload import upload_bp
+        try:
+            # Modified: Use src.catalog.web instead of src.catalog.routes
+            logger.info("Registering blueprints from src.catalog.web...")
 
-        app.register_blueprint(upload_bp, url_prefix="/api/upload")
+            # Check if admin_routes.py exists and contains a blueprint
+            try:
+                from src.catalog.web.admin_routes import admin_bp
 
-        from src.catalog.routes.documents import documents_bp
+                app.register_blueprint(admin_bp, url_prefix="/api/admin")
+                logger.info("Registered admin_bp blueprint")
+            except (ImportError, AttributeError) as e:
+                logger.warning(f"Could not import admin_bp blueprint: {str(e)}")
 
-        app.register_blueprint(documents_bp, url_prefix="/api/documents")
+            # Check if main_routes.py exists and contains a blueprint
+            try:
+                from src.catalog.web.main_routes import main_bp
 
-        from src.catalog.routes.admin import admin_bp
+                app.register_blueprint(main_bp, url_prefix="/api")
+                logger.info("Registered main_bp blueprint")
+            except (ImportError, AttributeError) as e:
+                logger.warning(f"Could not import main_bp blueprint: {str(e)}")
 
-        app.register_blueprint(admin_bp, url_prefix="/api/admin")
+            # Check if search_routes.py exists and contains a blueprint
+            try:
+                from src.catalog.web.search_routes import search_bp
 
-        logger.info("Registered admin blueprint")
+                app.register_blueprint(search_bp, url_prefix="/api/search")
+                logger.info("Registered search_bp blueprint")
+            except (ImportError, AttributeError) as e:
+                logger.warning(f"Could not import search_bp blueprint: {str(e)}")
 
+            # Add a fallback route for root path
+            @app.route("/")
+            def index():
+                return {
+                    "status": "online",
+                    "message": "Document Catalog API is running",
+                    "version": "1.0.0",
+                }
+
+        except Exception as e:
+            logger.error(f"Error registering blueprints: {str(e)}")
+
+    logger.info("Flask application initialized successfully")
     return app

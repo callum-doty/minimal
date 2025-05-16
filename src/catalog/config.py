@@ -23,11 +23,15 @@ def get_database_uri():
         return database_url
 
     # Second priority: Check for explicit configuration
-    db_user = os.environ.get("DB_USER", "custom_user")
-    db_password = os.environ.get("DB_PASSWORD", "strong_password")
+    db_user = os.environ.get("DB_USER") or os.environ.get(
+        "POSTGRES_USER", "custom_user"
+    )
+    db_password = os.environ.get("DB_PASSWORD") or os.environ.get(
+        "POSTGRES_PASSWORD", "strong_password"
+    )
     db_host = os.environ.get("DB_HOST", "localhost")
     db_port = os.environ.get("DB_PORT", "5432")
-    db_name = os.environ.get("DB_NAME", "catalog_db")
+    db_name = os.environ.get("DB_NAME") or os.environ.get("POSTGRES_DB", "catalog_db")
 
     # Build the connection string
     return f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
@@ -53,11 +57,13 @@ def get_redis_uri():
 def get_minio_config():
     """Get MinIO configuration based on environment."""
     return {
-        "endpoint": os.environ.get("MINIO_ENDPOINT", "localhost:9000"),
+        "endpoint": os.environ.get("MINIO_ENDPOINT")
+        or os.environ.get("MINIO_URL", "localhost:9000"),
         "access_key": os.environ.get("MINIO_ACCESS_KEY", "minioaccess"),
         "secret_key": os.environ.get("MINIO_SECRET_KEY", "miniosecret"),
         "secure": os.environ.get("MINIO_SECURE", "false").lower() == "true",
-        "bucket": os.environ.get("MINIO_BUCKET", "documents"),
+        "bucket": os.environ.get("MINIO_BUCKET")
+        or os.environ.get("STORAGE_BUCKET", "documents"),
     }
 
 
@@ -86,14 +92,44 @@ def configure_app(app):
         os.environ.get("USE_MOCK_STORAGE", "false").lower() == "true"
     )
 
-    # Other configurations
+    # Handle other Flask configurations
+    app.config["SECRET_KEY"] = os.environ.get(
+        "SECRET_KEY", "your_secure_random_key_here"
+    )
+    app.config["SITE_PASSWORD"] = os.environ.get("SITE_PASSWORD", None)
+
+    # Security settings
+    app.config["SECURE_COOKIES"] = (
+        os.environ.get("SECURE_COOKIES", "false").lower() == "true"
+    )
+    app.config["BEHIND_PROXY"] = (
+        os.environ.get("BEHIND_PROXY", "false").lower() == "true"
+    )
+
+    # File upload settings
     app.config["UPLOAD_FOLDER"] = os.environ.get("UPLOAD_FOLDER", "./uploads")
     app.config["MAX_CONTENT_LENGTH"] = int(
         os.environ.get("MAX_CONTENT_LENGTH", 16 * 1024 * 1024)
     )
-    app.config["SECRET_KEY"] = os.environ.get(
-        "SECRET_KEY", "your_secure_random_key_here"
-    )
+    app.config["ALLOWED_EXTENSIONS"] = {
+        "pdf",
+        "png",
+        "jpg",
+        "jpeg",
+        "tiff",
+        "tif",
+        "gif",
+        "bmp",
+    }
+
+    # Storage directories
+    app.config["STORAGE_DIR"] = os.environ.get("STORAGE_DIR", "./data")
+    app.config["TMPDIR"] = os.environ.get("TMPDIR", "./tmp")
+
+    # Ensure directories exist
+    os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
+    os.makedirs(app.config["STORAGE_DIR"], exist_ok=True)
+    os.makedirs(app.config["TMPDIR"], exist_ok=True)
 
     # Log configurations
     logger.info(
