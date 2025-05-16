@@ -31,7 +31,7 @@ fi
 # Check if git is available and if this is a git repository
 if command -v git &> /dev/null && git rev-parse --is-inside-work-tree &> /dev/null; then
     echo "Git repository detected, committing changes..."
-    git add src/catalog/config.py src/wsgi.py render.yaml
+    git add src/catalog/config.py src/wsgi.py src/catalog/services/storage_service.py render.yaml
     git commit -m "Fix MinIO connection issues by improving error handling and fallback to mock storage"
     
     echo "Changes committed. You can now push these changes to your repository."
@@ -47,6 +47,11 @@ echo "1. Push the changes to your repository"
 echo "2. Redeploy your application on Render"
 echo "3. Verify that the application is using mock storage correctly"
 echo ""
-echo "Note: The USE_MOCK_STORAGE environment variable has been set to 'true' for all services"
-echo "in render.yaml. This will ensure that your application uses mock storage instead of"
-echo "trying to connect to MinIO, which was causing the connection timeout errors."
+echo "Note: The following changes have been made:"
+echo "1. The USE_MOCK_STORAGE environment variable has been set to 'true' for all services in render.yaml"
+echo "2. The config.py file has been updated to always use mock storage regardless of environment variables"
+echo "3. The wsgi.py file has been updated to always initialize mock storage without trying MinIO first"
+echo "4. The storage_service.py file has been updated to completely bypass MinIO initialization when mock storage is enabled"
+echo ""
+echo "These changes will ensure your application uses mock storage instead of trying to connect to MinIO,"
+echo "which was causing the connection timeout errors."

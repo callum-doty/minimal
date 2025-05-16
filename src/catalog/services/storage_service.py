@@ -23,7 +23,6 @@ class MinIOStorage:
         return cls._instance
 
     def _init_client(self):
-        
         """Initialize the MinIO client."""
         if self._client is None:
             self.logger = logging.getLogger(__name__)
@@ -64,9 +63,13 @@ class MinIOStorage:
                     self._client = None
                     # Check if we should use mock storage instead
                     if os.environ.get("USE_MOCK_STORAGE", "").lower() == "true":
-                        self.logger.warning("Falling back to mock storage due to MinIO connection issues")
+                        self.logger.warning(
+                            "Falling back to mock storage due to MinIO connection issues"
+                        )
                     else:
-                        self.logger.error("MinIO connection failed and USE_MOCK_STORAGE is not enabled")
+                        self.logger.error(
+                            "MinIO connection failed and USE_MOCK_STORAGE is not enabled"
+                        )
             except Exception as e:
                 self.logger.error(f"Error initializing MinIO client: {str(e)}")
                 self._client = None
@@ -242,12 +245,38 @@ class MinIOStorage:
 # For backward compatibility with the StorageService class pattern
 class StorageService:
     def __init__(self, app=None):
-        self.minio_storage = MinIOStorage()
+        # Check if we should use mock storage before initializing MinIO
+        self.use_mock_storage = False
+        self.mock_storage = None
+        self.minio_storage = None
+
         if app is not None:
             self.init_app(app)
+        else:
+            # Check environment variable directly if no app is provided
+            self.use_mock_storage = (
+                os.environ.get("USE_MOCK_STORAGE", "").lower() == "true"
+            )
+            if not self.use_mock_storage:
+                self.minio_storage = MinIOStorage()
 
     def init_app(self, app):
         """Initialize the storage service with the app."""
+        # Check if we should use mock storage
+        self.use_mock_storage = app.config.get("USE_MOCK_STORAGE", False)
+
+        if self.use_mock_storage:
+            # Use mock storage instead of MinIO
+            logger.info("Using mock storage instead of MinIO (USE_MOCK_STORAGE=True)")
+            from src.catalog.services.mock_storage import MockStorage
+
+            self.mock_storage = MockStorage()
+            return
+
+        # Only initialize MinIO if not using mock storage
+        logger.info("Initializing MinIO storage")
+        self.minio_storage = MinIOStorage()
+
         # Update MinIO configuration from app config
         endpoint = app.config.get("MINIO_ENDPOINT")
         access_key = app.config.get("MINIO_ACCESS_KEY")
@@ -269,31 +298,46 @@ class StorageService:
 
     @property
     def client(self):
-        """Get the MinIO client."""
-        return self.minio_storage.client
+        """Get the storage client."""
+        if self.use_mock_storage:
+            return self.mock_storage.client if self.mock_storage else None
+        return self.minio_storage.client if self.minio_storage else None
 
     def upload_file(self, file_path, object_name=None):
-        """Upload a file to MinIO."""
+        """Upload a file to storage."""
         if object_name is None:
             object_name = os.path.basename(file_path)
+
+        if self.use_mock_storage:
+            return self.mock_storage.upload_file(file_path, object_name)
         return self.minio_storage.upload_file(file_path, object_name)
 
     def download_file(self, object_name, file_path):
-        """Download a file from MinIO."""
+        """Download a file from storage."""
+        if self.use_mock_storage:
+            return self.mock_storage.download_file(object_name, file_path)
         return self.minio_storage.download_file(object_name, file_path)
 
     def get_file(self, object_name):
-        """Get file data from MinIO."""
+        """Get file data from storage."""
+        if self.use_mock_storage:
+            return self.mock_storage.get_file(object_name)
         return self.minio_storage.get_file(object_name)
 
     def get_file_url(self, object_name, expires=3600):
         """Get a presigned URL for an object."""
+        if self.use_mock_storage:
+            return self.mock_storage.get_file_url(object_name, expires)
         return self.minio_storage.get_file_url(object_name, expires)
 
     def list_files(self):
-        """List all files in the bucket."""
+        """List all files in storage."""
+        if self.use_mock_storage:
+            return self.mock_storage.list_files()
         return self.minio_storage.list_files()
 
     def delete_file(self, object_name):
-        """Delete a file from MinIO."""
+        """Delete a file from storage."""
+        if self.use_mock_storage:
+            return self.mock_storage.delete_file(object_name)
         return self.minio_storage.delete_file(object_name)
