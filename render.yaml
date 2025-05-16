@@ -3,8 +3,8 @@ services:
   - type: web
     name: catalog-web
     runtime: docker
-    repo: https://github.com/yourusername/project_catalog.git # Replace with your GitHub repo
-    region: oregon # Choose your preferred region
+    repo: https://github.com/callum-doty/project_catalog # Replace with your GitHub repo
+    region: ohio # Choose your preferred region
     plan: standard # Adjust based on your needs
     branch: main
     envVars:
@@ -51,7 +51,7 @@ services:
   - type: worker
     name: catalog-worker
     runtime: docker
-    repo: https://github.com/yourusername/project_catalog.git # Replace with your GitHub repo
+    repo: https://github.com/callum-doty/project_catalog # Replace with your GitHub repo
     region: oregon
     plan: standard
     branch: main
@@ -92,7 +92,7 @@ services:
   - type: worker
     name: catalog-beat
     runtime: docker
-    repo: https://github.com/yourusername/project_catalog.git # Replace with your GitHub repo
+    repo: https://github.com/callum-doty/project_catalog # Replace with your GitHub repo
     region: oregon
     plan: starter # Can use a smaller plan for beat service
     branch: main
@@ -134,7 +134,7 @@ services:
   - type: web
     name: catalog-minio
     runtime: docker
-    repo: https://github.com/yourusername/project_catalog.git # Replace with your GitHub repo
+    repo: https://github.com/callum-doty/project_catalog # Replace with your GitHub repo
     region: oregon
     plan: standard
     branch: main
@@ -151,9 +151,9 @@ services:
 
 databases:
   # PostgreSQL Database with Vector Extension
-  - name: catalog-postgres
+  - name: catalog-db
     plan: standard # Choose appropriate plan
-    region: oregon
+    region: ohio
     postgresMajorVersion: 14 # Match your current version
     ipAllowList: [] # Allow all IPs (or restrict as needed)
     extensions:
@@ -163,6 +163,6 @@ services:
   # Redis Service
   - type: redis
     name: catalog-redis
-    region: oregon
+    region: ohio
     plan: standard # Choose appropriate plan
     ipAllowList: [] # Allow all IPs (or restrict as needed)
