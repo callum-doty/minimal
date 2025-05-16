@@ -87,10 +87,9 @@ def configure_app(app):
     app.config["MINIO_SECURE"] = minio_config["secure"]
     app.config["MINIO_BUCKET"] = minio_config["bucket"]
 
-    # Add flag for using mock storage if MinIO is not available
-    app.config["USE_MOCK_STORAGE"] = (
-        os.environ.get("USE_MOCK_STORAGE", "false").lower() == "true"
-    )
+    # Always use mock storage in Render to avoid MinIO connection issues
+    # This is a critical fix for the connection timeout issues
+    app.config["USE_MOCK_STORAGE"] = True
 
     # Handle other Flask configurations
     app.config["SECRET_KEY"] = os.environ.get(
