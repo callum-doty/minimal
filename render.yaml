@@ -1,0 +1,168 @@
+services:
+  # Flask Web Service
+  - type: web
+    name: catalog-web
+    runtime: docker
+    repo: https://github.com/yourusername/project_catalog.git # Replace with your GitHub repo
+    region: oregon # Choose your preferred region
+    plan: standard # Adjust based on your needs
+    branch: main
+    envVars:
+      - key: FLASK_APP
+        value: src/wsgi.py
+      - key: FLASK_ENV
+        value: production
+      - key: DATABASE_URL # This will be set as an internal reference
+        fromDatabase:
+          name: catalog-postgres
+          property: connectionString
+      - key: SQLALCHEMY_DATABASE_URI # Duplicate of DATABASE_URL for Flask-SQLAlchemy
+        fromDatabase:
+          name: catalog-postgres
+          property: connectionString
+      - key: REDIS_URL # Set from Redis service
+        fromService:
+          type: redis
+          name: catalog-redis
+          property: connectionString
+      - key: CELERY_BROKER_URL
+        fromService:
+          type: redis
+          name: catalog-redis
+          property: connectionString
+      - key: CELERY_RESULT_BACKEND
+        fromService:
+          type: redis
+          name: catalog-redis
+          property: connectionString
+      - key: SERVICE_TYPE
+        value: web
+      - key: SECURE_COOKIES
+        value: "true"
+      - key: BEHIND_PROXY
+        value: "true"
+      - key: CLAUDE_API_KEY
+        sync: false # Prompts user to enter this value during deployment
+      - key: PYTHONPATH
+        value: /app
+    healthCheckPath: /health
+
+  # Celery Worker Service
+  - type: worker
+    name: catalog-worker
+    runtime: docker
+    repo: https://github.com/yourusername/project_catalog.git # Replace with your GitHub repo
+    region: oregon
+    plan: standard
+    branch: main
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: catalog-postgres
+          property: connectionString
+      - key: SQLALCHEMY_DATABASE_URI
+        fromDatabase:
+          name: catalog-postgres
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: catalog-redis
+          property: connectionString
+      - key: CELERY_BROKER_URL
+        fromService:
+          type: redis
+          name: catalog-redis
+          property: connectionString
+      - key: CELERY_RESULT_BACKEND
+        fromService:
+          type: redis
+          name: catalog-redis
+          property: connectionString
+      - key: SERVICE_TYPE
+        value: worker
+      - key: CLAUDE_API_KEY
+        sync: false
+      - key: PYTHONPATH
+        value: /app
+    buildCommand: docker build -t catalog-worker .
+    startCommand: ./start.sh
+
+  # Celery Beat Service
+  - type: worker
+    name: catalog-beat
+    runtime: docker
+    repo: https://github.com/yourusername/project_catalog.git # Replace with your GitHub repo
+    region: oregon
+    plan: starter # Can use a smaller plan for beat service
+    branch: main
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: catalog-postgres
+          property: connectionString
+      - key: SQLALCHEMY_DATABASE_URI
+        fromDatabase:
+          name: catalog-postgres
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: catalog-redis
+          property: connectionString
+      - key: CELERY_BROKER_URL
+        fromService:
+          type: redis
+          name: catalog-redis
+          property: connectionString
+      - key: CELERY_RESULT_BACKEND
+        fromService:
+          type: redis
+          name: catalog-redis
+          property: connectionString
+      - key: SERVICE_TYPE
+        value: beat
+      - key: CLAUDE_API_KEY
+        sync: false
+      - key: PYTHONPATH
+        value: /app
+    buildCommand: docker build -t catalog-beat .
+    startCommand: ./start.sh
+
+  # MinIO S3-compatible Storage (Note: You may need to use a third-party S3 service instead)
+  # Render doesn't offer direct MinIO hosting, so we'll run it as a private service
+  - type: web
+    name: catalog-minio
+    runtime: docker
+    repo: https://github.com/yourusername/project_catalog.git # Replace with your GitHub repo
+    region: oregon
+    plan: standard
+    branch: main
+    dockerfilePath: ./minio.Dockerfile # You'll need to create this
+    envVars:
+      - key: MINIO_ACCESS_KEY
+        value: minioaccess # Replace with secure value
+      - key: MINIO_SECRET_KEY
+        value: miniosecret # Replace with secure value
+    disk:
+      name: minio-data
+      mountPath: /data
+      sizeGB: 10
+
+databases:
+  # PostgreSQL Database with Vector Extension
+  - name: catalog-postgres
+    plan: standard # Choose appropriate plan
+    region: oregon
+    postgresMajorVersion: 14 # Match your current version
+    ipAllowList: [] # Allow all IPs (or restrict as needed)
+    extensions:
+      - vector # pgvector extension for similarity search
+
+services:
+  # Redis Service
+  - type: redis
+    name: catalog-redis
+    region: oregon
+    plan: standard # Choose appropriate plan
+    ipAllowList: [] # Allow all IPs (or restrict as needed)

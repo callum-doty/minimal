@@ -23,7 +23,6 @@ RUN apt-get update && apt-get install -y \
     libleptonica-dev \
     pkg-config \
     python3-magic \
-    python3-dev \
     libmagic1 \
     zlib1g-dev \
     libmagic-dev \
@@ -31,11 +30,11 @@ RUN apt-get update && apt-get install -y \
     libjpeg-dev \
     libopenjp2-7-dev \
     build-essential \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements file
 COPY requirements.txt /app/
-
 
 # Install Python packages
 RUN pip install --no-cache-dir -r /app/requirements.txt
@@ -48,6 +47,9 @@ COPY gunicorn.conf.py start.sh /app/
 # Create necessary directories
 RUN mkdir -p /app/uploads /app/logs /app/data/documents /app/tmp
 
+# Make the start script executable
+RUN chmod +x /app/start.sh
+
 # Set working directory
 WORKDIR /app
 
@@ -56,6 +58,10 @@ RUN useradd -m appuser && chown -R appuser /app
 
 # Switch to non-root user
 USER appuser
+
+# Health check (Render will use its own health check via the URL)
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD curl -f http://localhost:${PORT:-5000}/health || exit 1
 
 EXPOSE 5000
 
