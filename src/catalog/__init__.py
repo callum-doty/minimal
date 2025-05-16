@@ -8,6 +8,7 @@ from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_cors import CORS
+from flask_caching import Cache
 
 # Create logger
 logging.basicConfig(level=logging.INFO)
@@ -16,6 +17,7 @@ logger = logging.getLogger(__name__)
 # Initialize extensions
 db = SQLAlchemy()
 migrate = Migrate()
+cache = Cache()  # Add Cache extension for your blueprints
 
 # Import services
 from src.catalog.services.storage_service import StorageService
@@ -48,6 +50,11 @@ def create_app(test_config=None):
     db.init_app(app)
     migrate.init_app(app, db)
     CORS(app)
+
+    # Initialize cache
+    cache_config = {"CACHE_TYPE": "SimpleCache", "CACHE_DEFAULT_TIMEOUT": 300}
+    app.config.update(cache_config)
+    cache.init_app(app)
 
     # Initialize storage service placeholder
     global storage_service

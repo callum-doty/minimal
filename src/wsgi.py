@@ -25,6 +25,8 @@ try:
 
     logger.info("Creating Flask application...")
     app = create_app()
+    # Also expose as 'application' for WSGI servers like Gunicorn
+    application = app
     logger.info("Flask application created successfully.")
 except Exception as e:
     logger.error(f"Error creating Flask application: {str(e)}")
@@ -34,6 +36,8 @@ except Exception as e:
     from flask import Flask, jsonify
 
     app = Flask(__name__)
+    # Also expose as 'application' for WSGI servers like Gunicorn
+    application = app
 
     @app.route("/")
     def index():
