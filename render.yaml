@@ -1,4 +1,4 @@
-# Updated section of render.yaml
+# Fixed render.yaml with merged services
 services:
   # Flask Web Service
   - type: web
@@ -37,7 +37,7 @@ services:
           name: catalog-redis
           property: connectionString
       - key: USE_MOCK_STORAGE
-        value: "true"  # Always use mock storage in Render to avoid MinIO connection issues
+        value: "true" # Always use mock storage in Render to avoid MinIO connection issues
       - key: SERVICE_TYPE
         value: web
       - key: SECURE_COOKIES
@@ -86,7 +86,7 @@ services:
           name: catalog-redis
           property: connectionString
       - key: USE_MOCK_STORAGE
-        value: "true"  # Always use mock storage in Render to avoid MinIO connection issues
+        value: "true" # Always use mock storage in Render to avoid MinIO connection issues
       - key: SERVICE_TYPE
         value: worker
       - key: CLAUDE_API_KEY
@@ -129,7 +129,7 @@ services:
           name: catalog-redis
           property: connectionString
       - key: USE_MOCK_STORAGE
-        value: "true"  # Always use mock storage in Render to avoid MinIO connection issues
+        value: "true" # Always use mock storage in Render to avoid MinIO connection issues
       - key: SERVICE_TYPE
         value: beat
       - key: CLAUDE_API_KEY
@@ -159,6 +159,13 @@ services:
       mountPath: /data
       sizeGB: 10
 
+  # Redis Service
+  - type: redis
+    name: catalog-redis
+    region: oregon
+    plan: standard # Choose appropriate plan
+    ipAllowList: [] # Allow all IPs (or restrict as needed)
+
 databases:
   # PostgreSQL Database with Vector Extension
   - name: catalog-postgres
@@ -168,11 +175,3 @@ databases:
     ipAllowList: [] # Allow all IPs (or restrict as needed)
     extensions:
       - vector # pgvector extension for similarity search
-
-services:
-  # Redis Service
-  - type: redis
-    name: catalog-redis
-    region: oregon
-    plan: standard # Choose appropriate plan
-    ipAllowList: [] # Allow all IPs (or restrict as needed)
