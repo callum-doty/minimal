@@ -64,17 +64,34 @@ def init_storage_async():
         time.sleep(2)  # Let the main application start first
 
         with app.app_context():
-            # Always use mock storage in Render (temporary fix)
-            logger.info("Using mock storage service for Render deployment")
-            from src.catalog.services.mock_storage import MockStorage
-
-            mock_storage = MockStorage()
+            # Check if we should use mock storage
+            use_mock = app.config.get("USE_MOCK_STORAGE", False)
+            
+            if use_mock:
+                logger.info("Using mock storage service")
+                from src.catalog.services.mock_storage import MockStorage
+                storage = MockStorage()
+            else:
+                logger.info("Initializing MinIO storage service")
+                from src.catalog.services.storage_service import StorageService
+                
+                try:
+                    storage = StorageService(app)
+                    # Test connection by listing files
+                    storage.list_files()
+                    logger.info("MinIO storage connection successful")
+                except Exception as e:
+                    logger.error(f"MinIO connection failed: {str(e)}")
+                    logger.info("Falling back to mock storage")
+                    from src.catalog.services.mock_storage import MockStorage
+                    storage = MockStorage()
+                    app.config["USE_MOCK_STORAGE"] = True
+            
+            # Set the storage service
             import src.catalog
-
-            src.catalog.storage_service = mock_storage
+            src.catalog.storage_service = storage
             app.config["STORAGE_INITIALIZED"] = True
-            app.config["USE_MOCK_STORAGE"] = True
-            logger.info("Mock storage initialized successfully")
+            logger.info("Storage service initialized successfully")
     except Exception as e:
         logger.error(f"Error in async storage initialization: {str(e)}")
         logger.error(traceback.format_exc())

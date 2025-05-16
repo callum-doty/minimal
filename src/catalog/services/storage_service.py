@@ -23,10 +23,11 @@ class MinIOStorage:
         return cls._instance
 
     def _init_client(self):
+        
         """Initialize the MinIO client."""
         if self._client is None:
             self.logger = logging.getLogger(__name__)
-            http_client = PoolManager(timeout=10.0, retries=3)
+            http_client = PoolManager(timeout=30.0, retries=5)
 
             # Check for environment variables - first check the new Render-specific ones
             endpoint = os.getenv("MINIO_ENDPOINT") or os.getenv(
@@ -59,6 +60,13 @@ class MinIOStorage:
                         self.logger.info(f"Bucket exists: {self.bucket}")
                 except Exception as e:
                     self.logger.error(f"Error checking/creating bucket: {str(e)}")
+                    # If we can't create/check bucket, client is not usable
+                    self._client = None
+                    # Check if we should use mock storage instead
+                    if os.environ.get("USE_MOCK_STORAGE", "").lower() == "true":
+                        self.logger.warning("Falling back to mock storage due to MinIO connection issues")
+                    else:
+                        self.logger.error("MinIO connection failed and USE_MOCK_STORAGE is not enabled")
             except Exception as e:
                 self.logger.error(f"Error initializing MinIO client: {str(e)}")
                 self._client = None

@@ -37,7 +37,7 @@ services:
           name: catalog-redis
           property: connectionString
       - key: USE_MOCK_STORAGE
-        value: "true"  # Always use mock storage in Render
+        value: "true"  # Always use mock storage in Render to avoid MinIO connection issues
       - key: SERVICE_TYPE
         value: web
       - key: SECURE_COOKIES
@@ -85,18 +85,8 @@ services:
           type: redis
           name: catalog-redis
           property: connectionString
-      - key: MINIO_ENDPOINT
-        value: catalog-minio.onrender.com:9000
-      - key: MINIO_ACCESS_KEY
-        value: minioaccess 
-      - key: MINIO_SECRET_KEY
-        value: miniosecret
-      - key: MINIO_SECURE
-        value: "true"
-      - key: MINIO_BUCKET
-        value: documents
       - key: USE_MOCK_STORAGE
-        value: "true"
+        value: "true"  # Always use mock storage in Render to avoid MinIO connection issues
       - key: SERVICE_TYPE
         value: worker
       - key: CLAUDE_API_KEY
@@ -138,18 +128,8 @@ services:
           type: redis
           name: catalog-redis
           property: connectionString
-      - key: MINIO_ENDPOINT
-        value: catalog-minio.onrender.com:9000
-      - key: MINIO_ACCESS_KEY
-        value: minioaccess
-      - key: MINIO_SECRET_KEY
-        value: miniosecret
-      - key: MINIO_SECURE
-        value: "true"
-      - key: MINIO_BUCKET
-        value: documents
       - key: USE_MOCK_STORAGE
-        value: "true"
+        value: "true"  # Always use mock storage in Render to avoid MinIO connection issues
       - key: SERVICE_TYPE
         value: beat
       - key: CLAUDE_API_KEY
