@@ -1,9 +1,15 @@
+"""
+Storage service for handling file operations with MinIO.
+"""
 
-from minio import Minio
 import os
+import logging
+from minio import Minio
 from urllib3 import PoolManager
 import io
-import logging
+from flask import current_app
+
+logger = logging.getLogger(__name__)
 
 
 class MinIOStorage:
@@ -17,41 +23,59 @@ class MinIOStorage:
         return cls._instance
 
     def _init_client(self):
+        """Initialize the MinIO client."""
         if self._client is None:
             self.logger = logging.getLogger(__name__)
             http_client = PoolManager(timeout=10.0, retries=3)
-            endpoint = os.getenv("MINIO_URL", "minio:9000")
+
+            # Check for environment variables - first check the new Render-specific ones
+            endpoint = os.getenv("MINIO_ENDPOINT") or os.getenv(
+                "MINIO_URL", "minio:9000"
+            )
             access_key = os.getenv("MINIO_ACCESS_KEY", "minioaccess")
             secret_key = os.getenv("MINIO_SECRET_KEY", "miniosecret")
+            secure = os.getenv("MINIO_SECURE", "").lower() == "true"
 
             self.logger.info(
-                f"Initializing Minio client with endpoint: {endpoint}")
-
-            self._client = Minio(
-                endpoint=endpoint,
-                access_key=access_key,
-                secret_key=secret_key,
-                secure=False,
-                http_client=http_client
+                f"Initializing Minio client with endpoint: {endpoint}, secure: {secure}"
             )
-            self.bucket = os.getenv("MINIO_BUCKET", "documents")
 
-            # Make sure bucket exists
             try:
-                if not self._client.bucket_exists(self.bucket):
-                    self.logger.info(f"Creating bucket: {self.bucket}")
-                    self._client.make_bucket(self.bucket)
-                else:
-                    self.logger.info(f"Bucket exists: {self.bucket}")
+                self._client = Minio(
+                    endpoint=endpoint,
+                    access_key=access_key,
+                    secret_key=secret_key,
+                    secure=secure,
+                    http_client=http_client,
+                )
+                self.bucket = os.getenv("MINIO_BUCKET", "documents")
+
+                # Make sure the bucket exists
+                try:
+                    if not self._client.bucket_exists(self.bucket):
+                        self.logger.info(f"Creating bucket: {self.bucket}")
+                        self._client.make_bucket(self.bucket)
+                    else:
+                        self.logger.info(f"Bucket exists: {self.bucket}")
+                except Exception as e:
+                    self.logger.error(f"Error checking/creating bucket: {str(e)}")
             except Exception as e:
-                self.logger.error(f"Error checking/creating bucket: {str(e)}")
+                self.logger.error(f"Error initializing MinIO client: {str(e)}")
+                self._client = None
 
     @property
     def client(self):
+        """Get the MinIO client instance."""
+        if self._client is None:
+            self._init_client()
         return self._client
 
     def upload_file(self, filepath, filename):
         """Upload file to MinIO"""
+        if self.client is None:
+            self.logger.error("MinIO client is not initialized")
+            raise Exception("MinIO client is not initialized")
+
         try:
             self.logger.info(f"Uploading file to MinIO: {filename}")
 
@@ -59,9 +83,7 @@ class MinIOStorage:
                 raise FileNotFoundError(f"File not found: {filepath}")
 
             self.client.fput_object(
-                bucket_name=self.bucket,
-                object_name=filename,
-                file_path=filepath
+                bucket_name=self.bucket, object_name=filename, file_path=filepath
             )
 
             # Verify the file was uploaded
@@ -79,6 +101,10 @@ class MinIOStorage:
 
     def get_file(self, filename):
         """Get file data from MinIO"""
+        if self.client is None:
+            self.logger.error("MinIO client is not initialized")
+            return self._get_placeholder_image()
+
         try:
             self.logger.info(f"Getting file from MinIO: {filename}")
 
@@ -93,7 +119,7 @@ class MinIOStorage:
             data = io.BytesIO()
             response = self.client.get_object(self.bucket, filename)
 
-            for d in response.stream(32*1024):
+            for d in response.stream(32 * 1024):
                 data.write(d)
             data.seek(0)
 
@@ -107,37 +133,44 @@ class MinIOStorage:
     def _get_placeholder_image(self):
         """Return a placeholder image for missing files"""
         # Path to a default placeholder image in your static directory
-        placeholder_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                                        'static', 'img', 'placeholder.png')
+        placeholder_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "static",
+            "img",
+            "placeholder.png",
+        )
 
         # If the placeholder exists, return it
         if os.path.exists(placeholder_path):
-            with open(placeholder_path, 'rb') as f:
+            with open(placeholder_path, "rb") as f:
                 return f.read()
 
         # Otherwise generate a simple blank image using PIL
         try:
             from PIL import Image, ImageDraw
-            img = Image.new('RGB', (300, 300), color=(240, 240, 240))
+
+            img = Image.new("RGB", (300, 300), color=(240, 240, 240))
             d = ImageDraw.Draw(img)
             d.text((100, 140), "No Image", fill=(120, 120, 120))
 
             img_io = io.BytesIO()
-            img.save(img_io, 'PNG')
+            img.save(img_io, "PNG")
             img_io.seek(0)
             return img_io.getvalue()
         except Exception:
             # If all else fails, return empty bytes
-            return b''
+            return b""
 
     def download_file(self, filename, download_path):
         """Download file from MinIO to a local path"""
+        if self.client is None:
+            self.logger.error("MinIO client is not initialized")
+            raise Exception("MinIO client is not initialized")
+
         try:
             self.logger.info(f"Downloading file from MinIO: {filename}")
             self.client.fget_object(
-                bucket_name=self.bucket,
-                object_name=filename,
-                file_path=download_path
+                bucket_name=self.bucket, object_name=filename, file_path=download_path
             )
 
             if os.path.exists(download_path):
@@ -145,13 +178,18 @@ class MinIOStorage:
                 return download_path
             else:
                 raise FileNotFoundError(
-                    f"Download failed - file not created: {download_path}")
+                    f"Download failed - file not created: {download_path}"
+                )
         except Exception as e:
             self.logger.error(f"MinIO download failed: {str(e)}")
             raise Exception(f"MinIO download failed: {str(e)}")
 
     def list_files(self):
         """List all files in the bucket"""
+        if self.client is None:
+            self.logger.error("MinIO client is not initialized")
+            return []
+
         files = []
         try:
             objects = self.client.list_objects(self.bucket, recursive=True)
@@ -161,3 +199,93 @@ class MinIOStorage:
         except Exception as e:
             self.logger.error(f"Error listing MinIO files: {str(e)}")
             return []
+
+    def get_file_url(self, object_name, expires=3600):
+        """Get a presigned URL for an object."""
+        if self.client is None:
+            self.logger.error("MinIO client is not initialized")
+            return None
+
+        try:
+            url = self.client.presigned_get_object(
+                self.bucket, object_name, expires=expires
+            )
+            return url
+        except Exception as e:
+            self.logger.error(f"Error getting presigned URL: {str(e)}")
+            return None
+
+    def delete_file(self, object_name):
+        """Delete a file from MinIO."""
+        if self.client is None:
+            self.logger.error("MinIO client is not initialized")
+            return False
+
+        try:
+            self.logger.info(f"Deleting file {self.bucket}/{object_name}")
+            self.client.remove_object(self.bucket, object_name)
+            self.logger.info(f"File deleted successfully: {object_name}")
+            return True
+        except Exception as e:
+            self.logger.error(f"Error deleting file: {str(e)}")
+            return False
+
+
+# For backward compatibility with the StorageService class pattern
+class StorageService:
+    def __init__(self, app=None):
+        self.minio_storage = MinIOStorage()
+        if app is not None:
+            self.init_app(app)
+
+    def init_app(self, app):
+        """Initialize the storage service with the app."""
+        # Update MinIO configuration from app config
+        endpoint = app.config.get("MINIO_ENDPOINT")
+        access_key = app.config.get("MINIO_ACCESS_KEY")
+        secret_key = app.config.get("MINIO_SECRET_KEY")
+        secure = app.config.get("MINIO_SECURE", False)
+        bucket = app.config.get("MINIO_BUCKET", "documents")
+
+        if endpoint and access_key and secret_key:
+            # Set environment variables for MinIOStorage
+            os.environ["MINIO_ENDPOINT"] = endpoint
+            os.environ["MINIO_ACCESS_KEY"] = access_key
+            os.environ["MINIO_SECRET_KEY"] = secret_key
+            os.environ["MINIO_SECURE"] = "true" if secure else "false"
+            os.environ["MINIO_BUCKET"] = bucket
+
+            # Reinitialize the client with the new settings
+            self.minio_storage._client = None
+            self.minio_storage._init_client()
+
+    @property
+    def client(self):
+        """Get the MinIO client."""
+        return self.minio_storage.client
+
+    def upload_file(self, file_path, object_name=None):
+        """Upload a file to MinIO."""
+        if object_name is None:
+            object_name = os.path.basename(file_path)
+        return self.minio_storage.upload_file(file_path, object_name)
+
+    def download_file(self, object_name, file_path):
+        """Download a file from MinIO."""
+        return self.minio_storage.download_file(object_name, file_path)
+
+    def get_file(self, object_name):
+        """Get file data from MinIO."""
+        return self.minio_storage.get_file(object_name)
+
+    def get_file_url(self, object_name, expires=3600):
+        """Get a presigned URL for an object."""
+        return self.minio_storage.get_file_url(object_name, expires)
+
+    def list_files(self):
+        """List all files in the bucket."""
+        return self.minio_storage.list_files()
+
+    def delete_file(self, object_name):
+        """Delete a file from MinIO."""
+        return self.minio_storage.delete_file(object_name)
