@@ -1,3 +1,5 @@
+# Updated src/catalog/__init__.py
+
 """
 Initialize the Flask application and its extensions.
 """
@@ -9,6 +11,7 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_cors import CORS
 from flask_caching import Cache
+from flask_wtf.csrf import CSRFProtect  # Add CSRF protection
 
 # Create logger
 logging.basicConfig(level=logging.INFO)
@@ -18,6 +21,7 @@ logger = logging.getLogger(__name__)
 db = SQLAlchemy()
 migrate = Migrate()
 cache = Cache()  # Add Cache extension for your blueprints
+csrf = CSRFProtect()  # Add CSRF protection
 
 # Import services
 from src.catalog.services.storage_service import StorageService
@@ -50,6 +54,7 @@ def create_app(test_config=None):
     db.init_app(app)
     migrate.init_app(app, db)
     CORS(app)
+    csrf.init_app(app)  # Initialize CSRF protection
 
     # Initialize cache
     cache_config = {"CACHE_TYPE": "SimpleCache", "CACHE_DEFAULT_TIMEOUT": 300}
@@ -84,10 +89,10 @@ def create_app(test_config=None):
         except Exception as e:
             return {"status": "unhealthy", "error": str(e)}, 500
 
-    # Register blueprints - MODIFIED FOR YOUR PROJECT STRUCTURE
+    # Register blueprints
     with app.app_context():
         try:
-            # Modified: Use src.catalog.web instead of src.catalog.routes
+            # Use src.catalog.web instead of src.catalog.routes
             logger.info("Registering blueprints from src.catalog.web...")
 
             # Check if admin_routes.py exists and contains a blueprint
@@ -101,21 +106,21 @@ def create_app(test_config=None):
 
             # Check if main_routes.py exists and contains a blueprint
             try:
-                from src.catalog.web.main_routes import main_bp
+                from src.catalog.web.main_routes import main_routes
 
-                app.register_blueprint(main_bp, url_prefix="/api")
-                logger.info("Registered main_bp blueprint")
+                app.register_blueprint(main_routes, url_prefix="/api")
+                logger.info("Registered main_routes blueprint")
             except (ImportError, AttributeError) as e:
-                logger.warning(f"Could not import main_bp blueprint: {str(e)}")
+                logger.warning(f"Could not import main_routes blueprint: {str(e)}")
 
             # Check if search_routes.py exists and contains a blueprint
             try:
-                from src.catalog.web.search_routes import search_bp
+                from src.catalog.web.search_routes import search_routes
 
-                app.register_blueprint(search_bp, url_prefix="/api/search")
-                logger.info("Registered search_bp blueprint")
+                app.register_blueprint(search_routes, url_prefix="/api/search")
+                logger.info("Registered search_routes blueprint")
             except (ImportError, AttributeError) as e:
-                logger.warning(f"Could not import search_bp blueprint: {str(e)}")
+                logger.warning(f"Could not import search_routes blueprint: {str(e)}")
 
             # Add a fallback route for root path
             @app.route("/")
