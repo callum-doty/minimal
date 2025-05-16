@@ -49,9 +49,9 @@ services:
       - key: PYTHONPATH
         value: /app
     buildCommand: >
-      chmod +x start.sh &&
+      chmod +x direct-start.sh
       chmod +x failsafe-start.sh
-    startCommand: ./failsafe-start.sh
+    startCommand: ./direct-start.sh
 
   # Celery Worker Service
   - type: worker
