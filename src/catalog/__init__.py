@@ -1,89 +1,70 @@
-# src/catalog/__init__.py
-from flask import Flask, request
-from flask_sqlalchemy import SQLAlchemy
-from flask_migrate import Migrate
-from flask_caching import Cache
-from flask_wtf.csrf import CSRFProtect
+"""
+Initialize the Flask application and its extensions.
+"""
+
 import os
 import logging
+from flask import Flask
+from flask_sqlalchemy import SQLAlchemy
+from flask_migrate import Migrate
+from flask_cors import CORS
 
-# Configure logging
+# Create logger
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Create extension instances
+# Initialize extensions
 db = SQLAlchemy()
 migrate = Migrate()
-cache = Cache()
-csrf = CSRFProtect()
 
 # Import services
 from src.catalog.services.storage_service import StorageService
+from src.catalog.services.mock_storage import MockStorage
 
-storage_service = StorageService()
+storage_service = None  # Will be initialized in create_app
 
 
 def create_app(test_config=None):
-    """Application factory pattern for Flask app"""
-
-    # Create and configure the app
-    template_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates")
-    static_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
-
-    app = Flask(__name__, template_folder=template_dir, static_folder=static_dir)
+    """Create and configure the Flask application."""
+    # Create the Flask app
+    app = Flask(__name__, instance_relative_config=True)
 
     # Load configuration
-    if os.path.exists("src/catalog/config.py"):
-        # Use the new flexible configuration if available
-        from src.catalog.config import configure_app
+    from src.catalog.config import configure_app
 
-        app = configure_app(app)
-    else:
-        # Fall back to the original configuration
-        app.config.from_mapping(
-            SECRET_KEY=os.environ.get("SECRET_KEY", "dev-key-please-change"),
-            SQLALCHEMY_DATABASE_URI=os.environ.get(
-                "DATABASE_URL",
-                "postgresql://custom_user:strong_password@db:5432/catalog_db",
-            ),
-            SQLALCHEMY_TRACK_MODIFICATIONS=False,
-            CACHE_TYPE="redis",
-            CACHE_REDIS_URL=os.environ.get("REDIS_URL", "redis://redis:6379/0"),
-            CACHE_DEFAULT_TIMEOUT=300,
-            WTF_CSRF_CHECK_DEFAULT=False,
-            WTF_CSRF_TIME_LIMIT=None,
-            WTF_CSRF_SSL_STRICT=False,
-            SESSION_COOKIE_HTTPONLY=True,
-            SESSION_COOKIE_SAMESITE="Lax",
-        )
+    app = configure_app(app)
 
     # Override with test config if provided
     if test_config:
         app.config.update(test_config)
 
-    # Detect Render deployment
-    render_service = os.environ.get("RENDER_SERVICE_NAME")
-    if render_service:
-        app.config["SESSION_COOKIE_SECURE"] = True
-        app.config["PREFERRED_URL_SCHEME"] = "https"
-        logger.info(f"Detected Render deployment: {render_service}")
+    # Ensure instance folder exists
+    try:
+        os.makedirs(app.instance_path, exist_ok=True)
+    except OSError:
+        pass
 
-    # Also keep Railway detection for backward compatibility
-    elif "RAILWAY_ENVIRONMENT" in os.environ:
-        app.config["SESSION_COOKIE_SECURE"] = True
-        app.config["PREFERRED_URL_SCHEME"] = "https"
-        logger.info("Detected Railway deployment")
-
-    # Initialize extensions with the app
+    # Initialize extensions
     db.init_app(app)
     migrate.init_app(app, db)
-    cache.init_app(app)
-    csrf.init_app(app)
+    CORS(app)
 
-    # Initialize storage service
-    storage_service.init_app(app)
+    # Initialize services
+    global storage_service
+    try:
+        if app.config.get("USE_MOCK_STORAGE"):
+            logger.info("Using mock storage service")
+            storage_service = MockStorage()
+        else:
+            logger.info("Initializing MinIO storage service")
+            storage_service = StorageService()
+            storage_service.init_app(app)
+    except Exception as e:
+        logger.warning(f"Error initializing storage service: {str(e)}")
+        logger.info("Falling back to mock storage service")
+        storage_service = MockStorage()
 
-    # Register health check endpoint for Render
+    # Register health check endpoint
     @app.route("/health")
     def health_check():
         """Health check endpoint for Render."""
@@ -98,63 +79,25 @@ def create_app(test_config=None):
                 "status": "healthy",
                 "database": "connected",
                 "storage": minio_status,
-                "environment": os.environ.get("FLASK_ENV", "unknown"),
             }, 200
         except Exception as e:
-            logger.error(f"Health check failed: {str(e)}")
             return {"status": "unhealthy", "error": str(e)}, 500
 
     # Register blueprints
     with app.app_context():
-        try:
-            # Import blueprints here to avoid circular imports
-            from src.catalog.web.main_routes import main_routes
-            from src.catalog.web.search_routes import search_routes
+        # Import and register blueprints
+        from src.catalog.routes.upload import upload_bp
 
-            app.register_blueprint(main_routes)
-            app.register_blueprint(search_routes, url_prefix="/search")
+        app.register_blueprint(upload_bp, url_prefix="/api/upload")
 
-            # Register admin blueprint
-            try:
-                from src.catalog.web.admin_routes import admin_bp
+        from src.catalog.routes.documents import documents_bp
 
-                app.register_blueprint(admin_bp)
-                logger.info("Registered admin blueprint")
-            except Exception as e:
-                logger.warning(f"Could not register admin blueprint: {str(e)}")
+        app.register_blueprint(documents_bp, url_prefix="/api/documents")
 
-        except Exception as e:
-            logger.error(f"Error registering blueprints: {str(e)}")
-            raise
+        from src.catalog.routes.admin import admin_bp
 
-    # Add middleware for security headers
-    @app.after_request
-    def add_security_headers(response):
-        response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["X-Frame-Options"] = "SAMEORIGIN"
+        app.register_blueprint(admin_bp, url_prefix="/api/admin")
 
-        # Apply HSTS header if behind proxy or in secure environment
-        if (
-            render_service
-            or "RAILWAY_ENVIRONMENT" in os.environ
-            or os.environ.get("BEHIND_PROXY", "false").lower() == "true"
-        ):
-            response.headers["Strict-Transport-Security"] = (
-                "max-age=31536000; includeSubDomains"
-            )
-
-        return response
-
-    # Add middleware for handling proxies
-    @app.before_request
-    def handle_proxy():
-        if (
-            render_service
-            or "RAILWAY_ENVIRONMENT" in os.environ
-            or os.environ.get("BEHIND_PROXY", "false").lower() == "true"
-        ):
-            if "X-Forwarded-Proto" in request.headers:
-                if request.headers["X-Forwarded-Proto"] == "https":
-                    request.environ["wsgi.url_scheme"] = "https"
+        logger.info("Registered admin blueprint")
 
     return app

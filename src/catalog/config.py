@@ -63,9 +63,6 @@ def get_minio_config():
 
 def configure_app(app):
     """Configure Flask app based on environment."""
-    # Set basic security settings
-    app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-key-please-change")
-
     # Database configuration
     app.config["SQLALCHEMY_DATABASE_URI"] = get_database_uri()
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
@@ -76,26 +73,6 @@ def configure_app(app):
     app.config["CELERY_BROKER_URL"] = redis_uri
     app.config["CELERY_RESULT_BACKEND"] = redis_uri
 
-    # Configure Flask-Caching
-    app.config["CACHE_TYPE"] = "redis"
-    app.config["CACHE_REDIS_URL"] = redis_uri
-    app.config["CACHE_DEFAULT_TIMEOUT"] = 300
-
-    # Configure CSRF protection
-    app.config["WTF_CSRF_CHECK_DEFAULT"] = False
-    app.config["WTF_CSRF_TIME_LIMIT"] = None
-    app.config["WTF_CSRF_SSL_STRICT"] = False
-
-    # Configure session cookies
-    app.config["SESSION_COOKIE_HTTPONLY"] = True
-    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-
-    # Check if running in secure environment
-    render_service = os.environ.get("RENDER_SERVICE_NAME")
-    if render_service or os.environ.get("BEHIND_PROXY", "false").lower() == "true":
-        app.config["SESSION_COOKIE_SECURE"] = True
-        app.config["PREFERRED_URL_SCHEME"] = "https"
-
     # MinIO configuration
     minio_config = get_minio_config()
     app.config["MINIO_ENDPOINT"] = minio_config["endpoint"]
@@ -104,31 +81,29 @@ def configure_app(app):
     app.config["MINIO_SECURE"] = minio_config["secure"]
     app.config["MINIO_BUCKET"] = minio_config["bucket"]
 
-    # File upload configurations
+    # Add flag for using mock storage if MinIO is not available
+    app.config["USE_MOCK_STORAGE"] = (
+        os.environ.get("USE_MOCK_STORAGE", "false").lower() == "true"
+    )
+
+    # Other configurations
     app.config["UPLOAD_FOLDER"] = os.environ.get("UPLOAD_FOLDER", "./uploads")
     app.config["MAX_CONTENT_LENGTH"] = int(
         os.environ.get("MAX_CONTENT_LENGTH", 16 * 1024 * 1024)
     )
-
-    # Log configuration information (safely omitting secrets)
-    db_uri = app.config["SQLALCHEMY_DATABASE_URI"]
-    masked_db_uri = (
-        f"{db_uri.split('@')[0].split(':')[0]}://*****@{db_uri.split('@')[1]}"
-        if "@" in db_uri
-        else db_uri
+    app.config["SECRET_KEY"] = os.environ.get(
+        "SECRET_KEY", "your_secure_random_key_here"
     )
-    logger.info(f"Database URI: {masked_db_uri}")
 
-    masked_redis = (
-        f"{redis_uri.split('@')[0]}@{redis_uri.split('@')[1]}"
-        if "@" in redis_uri
-        else redis_uri
-    )
-    logger.info(f"Redis URI: {masked_redis}")
-
+    # Log configurations
     logger.info(
-        f"MinIO Endpoint: {minio_config['endpoint']}, Secure: {minio_config['secure']}"
+        f"Database URI: {app.config['SQLALCHEMY_DATABASE_URI'].split('@')[0].split(':')[0]}://*****@{app.config['SQLALCHEMY_DATABASE_URI'].split('@')[1]}"
     )
-    logger.info(f"Environment: {os.environ.get('FLASK_ENV', 'not set')}")
+    logger.info(
+        f"Redis URI: {redis_uri.split('@')[0]}@{redis_uri.split('@')[1] if '@' in redis_uri else redis_uri.split('//')[1]}"
+    )
+    logger.info(
+        f"MinIO Endpoint: {minio_config['endpoint']}, Secure: {minio_config['secure']}, Use Mock: {app.config['USE_MOCK_STORAGE']}"
+    )
 
     return app

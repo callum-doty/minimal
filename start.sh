@@ -7,6 +7,7 @@ set -e  # Exit immediately if a command exits with a non-zero status
 echo "Starting service with environment: SERVICE_TYPE=${SERVICE_TYPE}"
 echo "Current directory: $(pwd)"
 echo "Python version: $(python --version)"
+echo "PORT: ${PORT}"
 
 # Create necessary directories
 mkdir -p ./data/documents
@@ -22,11 +23,12 @@ case $SERVICE_TYPE in
     echo "Starting web service..."
     
     # Try to run database migrations
-    FLASK_APP=src/wsgi.py python -m flask db upgrade
+    FLASK_APP=src/wsgi.py python -m flask db upgrade || echo "Migration failed, but continuing..."
     
     # Start the Flask application with proper settings for proxies
-    echo "Starting with proxy settings..."
-    gunicorn --bind "0.0.0.0:${PORT:-5000}" --workers=1 --timeout=120 --forwarded-allow-ips='*' src.wsgi:application
+    echo "Starting with proxy settings on PORT ${PORT}..."
+    # Use gunicorn to explicitly bind to the PORT provided by Render
+    gunicorn --bind "0.0.0.0:${PORT}" --workers=1 --timeout=120 --forwarded-allow-ips='*' src.wsgi:application
     ;;
     
   "worker")
