@@ -1,0 +1,12 @@
+services:
+  # Minimal Flask Web Service
+  - type: web
+    name: minimal-catalog-web
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    region: oregon # Choose your preferred region
+    plan: free # Using the free plan for testing
+    envVars:
+      - key: PORT
+        value: 10000 # Render will automatically assign a port, but we set a default
+    healthCheckPath: /health
